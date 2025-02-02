@@ -14,8 +14,14 @@
         <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <keycloak.version>21.1.1</keycloak.version>
-        <matrix.sdk.version>0.2.5</matrix.sdk.version>
     </properties>
+
+    <repositories>
+        <repository>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
+        </repository>
+    </repositories>
 
     <dependencies>
         <!-- Keycloak Server SPI -->
@@ -40,9 +46,9 @@
 
         <!-- Matrix SDK -->
         <dependency>
-            <groupId>io.github.ma1uta.matrix</groupId>
+            <groupId>com.github.ma1uta.matrix</groupId>
             <artifactId>client-impl</artifactId>
-            <version>${matrix.sdk.version}</version>
+            <version>0.10.0</version>
         </dependency>
 
         <!-- Logging -->

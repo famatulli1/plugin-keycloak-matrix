@@ -1,12 +1,12 @@
 package org.keycloak.matrix;
 
 import io.github.ma1uta.matrix.client.MatrixClient;
-import io.github.ma1uta.matrix.client.StandaloneClient;
 import io.github.ma1uta.matrix.client.api.AccountApi;
 import io.github.ma1uta.matrix.client.api.EventApi;
 import io.github.ma1uta.matrix.client.api.RoomApi;
 import io.github.ma1uta.matrix.client.model.account.WhoAmI;
 import io.github.ma1uta.matrix.client.model.room.CreateRoomResponse;
+import io.github.ma1uta.matrix.client.model.room.JoinedRoom;
 import io.github.ma1uta.matrix.client.model.room.JoinedRooms;
 import io.github.ma1uta.matrix.client.model.room.RoomId;
 import org.junit.jupiter.api.BeforeEach;
@@ -55,7 +55,7 @@ class MatrixServiceImplTest {
         // Setup mock responses
         WhoAmI whoAmI = new WhoAmI();
         whoAmI.setUserId("@bot:matrix.org");
-        when(accountApi.getWhoAmI()).thenReturn(CompletableFuture.completedFuture(whoAmI));
+        when(accountApi.whoami()).thenReturn(CompletableFuture.completedFuture(whoAmI));
         when(matrixClient.account()).thenReturn(accountApi);
         when(matrixClient.room()).thenReturn(roomApi);
         when(matrixClient.event()).thenReturn(eventApi);
@@ -73,7 +73,7 @@ class MatrixServiceImplTest {
     @Test
     void initialize_shouldThrowExceptionOnFailure() {
         // Arrange
-        when(accountApi.getWhoAmI()).thenReturn(CompletableFuture.failedFuture(
+        when(accountApi.whoami()).thenReturn(CompletableFuture.failedFuture(
             new RuntimeException("Failed to connect")));
 
         // Act & Assert
@@ -92,16 +92,20 @@ class MatrixServiceImplTest {
         JoinedRooms joinedRooms = new JoinedRooms();
         joinedRooms.setJoinedRooms(Collections.singletonList(roomId));
         when(roomApi.joinedRooms()).thenReturn(CompletableFuture.completedFuture(joinedRooms));
-        when(roomApi.members(roomId)).thenReturn(CompletableFuture.completedFuture(
-            createMockMembersResponse(userId)));
-        when(eventApi.sendMessage(anyString(), anyString()))
+
+        Map<String, JoinedRoom> joinedMembers = new HashMap<>();
+        joinedMembers.put(userId, new JoinedRoom());
+        joinedMembers.put("@bot:matrix.org", new JoinedRoom());
+        when(roomApi.joinedMembers(roomId)).thenReturn(CompletableFuture.completedFuture(
+            createJoinedMembersResponse(joinedMembers)));
+        when(eventApi.sendFormattedMessage(anyString(), anyString(), any()))
             .thenReturn(CompletableFuture.completedFuture(null));
 
         // Act
         matrixService.sendOTP(userId, otp);
 
         // Assert
-        verify(eventApi).sendMessage(roomId, otp);
+        verify(eventApi).sendFormattedMessage(roomId, otp, null);
     }
 
     @Test
@@ -119,7 +123,7 @@ class MatrixServiceImplTest {
         createRoomResponse.setRoomId(newRoomId);
         when(roomApi.createDirectRoom(userId))
             .thenReturn(CompletableFuture.completedFuture(createRoomResponse));
-        when(eventApi.sendMessage(anyString(), anyString()))
+        when(eventApi.sendFormattedMessage(anyString(), anyString(), any()))
             .thenReturn(CompletableFuture.completedFuture(null));
 
         // Act
@@ -127,7 +131,7 @@ class MatrixServiceImplTest {
 
         // Assert
         verify(roomApi).createDirectRoom(userId);
-        verify(eventApi).sendMessage(newRoomId, otp);
+        verify(eventApi).sendFormattedMessage(newRoomId, otp, null);
     }
 
     @Test
@@ -151,14 +155,12 @@ class MatrixServiceImplTest {
             "Should throw exception when message sending fails");
     }
 
-    private io.github.ma1uta.matrix.client.model.room.Members createMockMembersResponse(String userId) {
-        io.github.ma1uta.matrix.client.model.room.Members members = 
-            new io.github.ma1uta.matrix.client.model.room.Members();
-        io.github.ma1uta.matrix.client.model.room.RoomMember member = 
-            new io.github.ma1uta.matrix.client.model.room.RoomMember();
-        member.setUserId(userId);
-        members.setChunk(Collections.singletonList(member));
-        return members;
+    private io.github.ma1uta.matrix.client.model.room.JoinedMembers createJoinedMembersResponse(
+            Map<String, JoinedRoom> members) {
+        io.github.ma1uta.matrix.client.model.room.JoinedMembers response = 
+            new io.github.ma1uta.matrix.client.model.room.JoinedMembers();
+        response.setJoined(members);
+        return response;
     }
 
     private org.keycloak.models.AuthenticatorConfigModel createConfigModel(Map<String, String> config) {

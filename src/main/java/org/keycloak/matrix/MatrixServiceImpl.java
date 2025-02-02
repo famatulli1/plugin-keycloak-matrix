@@ -3,9 +3,9 @@ package org.keycloak.matrix;
 import io.github.ma1uta.matrix.client.MatrixClient;
 import io.github.ma1uta.matrix.client.StandaloneClient;
 import io.github.ma1uta.matrix.client.model.room.RoomId;
-import io.github.ma1uta.matrix.client.model.auth.LoginResponse;
 import org.jboss.logging.Logger;
 
+import java.util.List;
 import java.util.concurrent.CompletionException;
 
 /**
@@ -33,7 +33,7 @@ public class MatrixServiceImpl implements MatrixService {
             this.accessToken = config.getBotAccessToken();
 
             // Verify the token is valid by trying to get account data
-            client.account().getWhoAmI().join();
+            client.account().whoami().join();
             
             initialized = true;
             logger.info("Matrix service initialized successfully");
@@ -54,7 +54,7 @@ public class MatrixServiceImpl implements MatrixService {
             RoomId roomId = createOrGetDirectMessageRoom(matrixUserId);
             
             // Send the message
-            client.event().sendMessage(roomId.getRoomId(), otp).join();
+            client.event().sendFormattedMessage(roomId.getRoomId(), otp, null).join();
             
             logger.debug("OTP sent successfully to " + matrixUserId);
         } catch (CompletionException e) {
@@ -71,12 +71,12 @@ public class MatrixServiceImpl implements MatrixService {
     private RoomId createOrGetDirectMessageRoom(String userId) throws MatrixMessageException {
         try {
             // First try to find existing direct message room
-            var rooms = client.room().joinedRooms().join();
+            List<String> rooms = client.room().joinedRooms().join().getJoinedRooms();
             
-            for (String roomId : rooms.getJoinedRooms()) {
-                var members = client.room().members(roomId).join();
-                if (members.getChunk().size() == 2 && members.getChunk().stream()
-                    .anyMatch(member -> member.getUserId().equals(userId))) {
+            for (String roomId : rooms) {
+                var members = client.room().joinedMembers(roomId).join();
+                if (members.getJoined().size() == 2 && 
+                    members.getJoined().containsKey(userId)) {
                     return new RoomId(roomId);
                 }
             }
