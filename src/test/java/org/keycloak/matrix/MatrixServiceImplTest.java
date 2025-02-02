@@ -1,14 +1,13 @@
 package org.keycloak.matrix;
 
 import io.github.ma1uta.matrix.client.MatrixClient;
-import io.github.ma1uta.matrix.client.api.AccountApi;
+import io.github.ma1uta.matrix.client.api.AuthApi;
 import io.github.ma1uta.matrix.client.api.EventApi;
 import io.github.ma1uta.matrix.client.api.RoomApi;
-import io.github.ma1uta.matrix.client.model.account.WhoAmI;
+import io.github.ma1uta.matrix.client.model.auth.WhoamiResponse;
+import io.github.ma1uta.matrix.client.model.room.CreateRoomRequest;
 import io.github.ma1uta.matrix.client.model.room.CreateRoomResponse;
-import io.github.ma1uta.matrix.client.model.room.JoinedRoom;
-import io.github.ma1uta.matrix.client.model.room.JoinedRooms;
-import io.github.ma1uta.matrix.client.model.room.RoomId;
+import io.github.ma1uta.matrix.event.content.RoomMessageContent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,7 +21,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -31,7 +30,7 @@ class MatrixServiceImplTest {
     @Mock
     private MatrixClient matrixClient;
     @Mock
-    private AccountApi accountApi;
+    private AuthApi authApi;
     @Mock
     private RoomApi roomApi;
     @Mock
@@ -53,10 +52,10 @@ class MatrixServiceImplTest {
         config = new MatrixConfig(createConfigModel(configMap));
 
         // Setup mock responses
-        WhoAmI whoAmI = new WhoAmI();
-        whoAmI.setUserId("@bot:matrix.org");
-        when(accountApi.whoami()).thenReturn(CompletableFuture.completedFuture(whoAmI));
-        when(matrixClient.account()).thenReturn(accountApi);
+        WhoamiResponse whoami = new WhoamiResponse();
+        whoami.setUserId("@bot:matrix.org");
+        when(authApi.whoami()).thenReturn(CompletableFuture.completedFuture(whoami));
+        when(matrixClient.auth()).thenReturn(authApi);
         when(matrixClient.room()).thenReturn(roomApi);
         when(matrixClient.event()).thenReturn(eventApi);
     }
@@ -73,7 +72,7 @@ class MatrixServiceImplTest {
     @Test
     void initialize_shouldThrowExceptionOnFailure() {
         // Arrange
-        when(accountApi.whoami()).thenReturn(CompletableFuture.failedFuture(
+        when(authApi.whoami()).thenReturn(CompletableFuture.failedFuture(
             new RuntimeException("Failed to connect")));
 
         // Act & Assert
@@ -89,23 +88,24 @@ class MatrixServiceImplTest {
         String roomId = "!room:matrix.org";
         String otp = "123456";
 
-        JoinedRooms joinedRooms = new JoinedRooms();
-        joinedRooms.setJoinedRooms(Collections.singletonList(roomId));
-        when(roomApi.joinedRooms()).thenReturn(CompletableFuture.completedFuture(joinedRooms));
+        when(roomApi.joinedRooms())
+            .thenReturn(CompletableFuture.completedFuture(Collections.singletonList(roomId)));
 
-        Map<String, JoinedRoom> joinedMembers = new HashMap<>();
-        joinedMembers.put(userId, new JoinedRoom());
-        joinedMembers.put("@bot:matrix.org", new JoinedRoom());
-        when(roomApi.joinedMembers(roomId)).thenReturn(CompletableFuture.completedFuture(
-            createJoinedMembersResponse(joinedMembers)));
-        when(eventApi.sendFormattedMessage(anyString(), anyString(), any()))
+        Map<String, Object> members = new HashMap<>();
+        members.put(userId, new HashMap<>());
+        members.put("@bot:matrix.org", new HashMap<>());
+        when(roomApi.joinedMembers(roomId))
+            .thenReturn(CompletableFuture.completedFuture(members));
+        when(eventApi.sendMessage(anyString(), any(RoomMessageContent.class)))
             .thenReturn(CompletableFuture.completedFuture(null));
+
+        matrixService.initialize(config);
 
         // Act
         matrixService.sendOTP(userId, otp);
 
         // Assert
-        verify(eventApi).sendFormattedMessage(roomId, otp, null);
+        verify(eventApi).sendMessage(eq(roomId), any(RoomMessageContent.class));
     }
 
     @Test
@@ -115,23 +115,27 @@ class MatrixServiceImplTest {
         String newRoomId = "!newroom:matrix.org";
         String otp = "123456";
 
-        JoinedRooms joinedRooms = new JoinedRooms();
-        joinedRooms.setJoinedRooms(Collections.emptyList());
-        when(roomApi.joinedRooms()).thenReturn(CompletableFuture.completedFuture(joinedRooms));
+        when(roomApi.joinedRooms())
+            .thenReturn(CompletableFuture.completedFuture(Collections.emptyList()));
 
-        CreateRoomResponse createRoomResponse = new CreateRoomResponse();
-        createRoomResponse.setRoomId(newRoomId);
-        when(roomApi.createDirectRoom(userId))
-            .thenReturn(CompletableFuture.completedFuture(createRoomResponse));
-        when(eventApi.sendFormattedMessage(anyString(), anyString(), any()))
+        CreateRoomResponse createResponse = new CreateRoomResponse();
+        createResponse.setRoomId(newRoomId);
+        when(roomApi.createRoom(any(CreateRoomRequest.class)))
+            .thenReturn(CompletableFuture.completedFuture(createResponse));
+        when(eventApi.sendMessage(anyString(), any(RoomMessageContent.class)))
             .thenReturn(CompletableFuture.completedFuture(null));
+
+        matrixService.initialize(config);
 
         // Act
         matrixService.sendOTP(userId, otp);
 
         // Assert
-        verify(roomApi).createDirectRoom(userId);
-        verify(eventApi).sendFormattedMessage(newRoomId, otp, null);
+        verify(roomApi).createRoom(argThat(request -> 
+            request.isDirect() && 
+            request.getInvite().contains(userId) &&
+            request.getPreset().equals(CreateRoomRequest.Preset.PRIVATE_CHAT.name())));
+        verify(eventApi).sendMessage(eq(newRoomId), any(RoomMessageContent.class));
     }
 
     @Test
@@ -153,14 +157,6 @@ class MatrixServiceImplTest {
         assertThrows(MatrixMessageException.class,
             () -> matrixService.sendOTP("@user:matrix.org", "123456"),
             "Should throw exception when message sending fails");
-    }
-
-    private io.github.ma1uta.matrix.client.model.room.JoinedMembers createJoinedMembersResponse(
-            Map<String, JoinedRoom> members) {
-        io.github.ma1uta.matrix.client.model.room.JoinedMembers response = 
-            new io.github.ma1uta.matrix.client.model.room.JoinedMembers();
-        response.setJoined(members);
-        return response;
     }
 
     private org.keycloak.models.AuthenticatorConfigModel createConfigModel(Map<String, String> config) {

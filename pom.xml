@@ -14,6 +14,7 @@
         <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <keycloak.version>21.1.1</keycloak.version>
+        <matrix.version>0.10.0</matrix.version>
     </properties>
 
     <repositories>
@@ -46,9 +47,9 @@
 
         <!-- Matrix SDK -->
         <dependency>
-            <groupId>com.github.ma1uta.matrix</groupId>
-            <artifactId>client-impl</artifactId>
-            <version>0.10.0</version>
+            <groupId>com.github.ma1uta</groupId>
+            <artifactId>jmsdk</artifactId>
+            <version>${matrix.version}</version>
         </dependency>
 
         <!-- Logging -->
